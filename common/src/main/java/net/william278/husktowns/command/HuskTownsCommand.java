@@ -21,6 +21,8 @@ package net.william278.husktowns.command;
 
 import de.themoep.minedown.adventure.MineDown;
 import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.JoinConfiguration;
+import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextColor;
 import net.william278.desertwell.about.AboutMenu;
 import net.william278.desertwell.util.UpdateChecker;
@@ -28,12 +30,15 @@ import net.william278.husktowns.HuskTowns;
 import net.william278.husktowns.migrator.LegacyMigrator;
 import net.william278.husktowns.migrator.Migrator;
 import net.william278.husktowns.user.CommandUser;
+import org.apache.commons.text.WordUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Function;
 
 public final class HuskTownsCommand extends Command {
 
@@ -44,6 +49,7 @@ public final class HuskTownsCommand extends Command {
         this.setChildren(List.of(
                 new ReloadCommand(this, plugin),
                 new UpdateCommand(this, plugin),
+                new StatusCommand(this, plugin),
                 new MigrateCommand(this, plugin),
                 getHelpCommand(),
                 (ChildCommand) getDefaultExecutor()
@@ -59,7 +65,7 @@ public final class HuskTownsCommand extends Command {
             this.aboutMenu = AboutMenu.builder()
                     .title(Component.text("HuskTowns"))
                     .description(Component.text("Simple and elegant proxy-compatible Towny-style protection"))
-                    .version(plugin.getVersion())
+                    .version(plugin.getPluginVersion())
                     .credits("Author",
                             AboutMenu.Credit.of("William278").description("Click to visit website").url("https://william278.net"))
                     .credits("Contributors",
@@ -70,7 +76,8 @@ public final class HuskTownsCommand extends Command {
                             AboutMenu.Credit.of("Wtq_").description("Simplified Chinese (zh-cn)"),
                             AboutMenu.Credit.of("XeroYT").description("French (fr-fr)"),
                             AboutMenu.Credit.of("Tyristana").description("Turkish (tr-tr)"),
-                            AboutMenu.Credit.of("ADAMADA8").description("Russian (ru-ru)"))
+                            AboutMenu.Credit.of("ADAMADA8").description("Russian (ru-ru)"),
+                            AboutMenu.Credit.of("awrwag").description("Korean (ko-kr)"))
                     .buttons(
                             AboutMenu.Link.of("https://william278.net/docs/husktowns").text("Documentation").icon("⛏"),
                             AboutMenu.Link.of("https://github.com/WiIIiam278/HuskTowns/issues").text("Issues").icon("❌").color(TextColor.color(0xff9f0f)),
@@ -101,27 +108,44 @@ public final class HuskTownsCommand extends Command {
     }
 
     private static class UpdateCommand extends ChildCommand {
-        private final UpdateChecker checker;
+        private final UpdateChecker updateChecker;
 
         protected UpdateCommand(@NotNull Command parent, @NotNull HuskTowns plugin) {
             super("update", List.of("version"), parent, "", plugin);
             this.setConsoleExecutable(true);
             this.setOperatorCommand(true);
-            this.checker = plugin.getUpdateChecker();
+            this.updateChecker = plugin.getUpdateChecker();
         }
 
         @Override
         public void execute(@NotNull CommandUser executor, @NotNull String[] args) {
-            checker.check().thenAccept(checked -> {
+            updateChecker.check().thenAccept(checked -> {
                 if (checked.isUpToDate()) {
-                    plugin.getLocales().getLocale("up_to_date", plugin.getVersion().toString())
+                    plugin.getLocales().getLocale("up_to_date", plugin.getPluginVersion().toString())
                             .ifPresent(executor::sendMessage);
                     return;
                 }
-                plugin.getLocales()
-                        .getLocale("update_available", checked.getLatestVersion().toString(), plugin.getVersion().toString())
-                        .ifPresent(executor::sendMessage);
+                plugin.getLocales().getLocale("update_available", checked.getLatestVersion().toString(),
+                        plugin.getPluginVersion().toString()).ifPresent(executor::sendMessage);
             });
+        }
+    }
+
+    private static class StatusCommand extends ChildCommand {
+
+        protected StatusCommand(@NotNull Command parent, @NotNull HuskTowns plugin) {
+            super("status", List.of(), parent, "", plugin);
+            this.setConsoleExecutable(true);
+            this.setOperatorCommand(true);
+        }
+
+        @Override
+        public void execute(@NotNull CommandUser executor, @NotNull String[] args) {
+            plugin.getLocales().getLocale("system_status_header").ifPresent(executor::sendMessage);
+            executor.sendMessage(Component.join(
+                    JoinConfiguration.newlines(),
+                    Arrays.stream(StatusLine.values()).map(s -> s.get(plugin)).toList()
+            ));
         }
     }
 
@@ -162,9 +186,9 @@ public final class HuskTownsCommand extends Command {
                 executor.sendMessage(new MineDown("[[Caution]](#ffff00) [Before migration, please make sure you have " +
                         "configured your town Roles and Level rules to match your existing " +
                         migrator.get().getName().toLowerCase() + " setup!](#ffff00)"));
-                if (plugin.getSettings().doCrossServer()) {
+                if (plugin.getSettings().getCrossServer().isEnabled()) {
                     executor.sendMessage(new MineDown("[[Caution]](#ffff00) [Make sure all your servers are online and running " +
-                            "HuskTowns v" + plugin.getVersion() + " to make sure that claim world data " +
+                            "HuskTowns v" + plugin.getPluginVersion() + " to make sure that claim world data " +
                             "has been pre-prepared on your database for each world/server.](#ffff00)"));
                 }
                 executor.sendMessage(new MineDown("[[Warning]](#ff0000) [If you proceed with migration, any existing town data " +
@@ -209,6 +233,66 @@ public final class HuskTownsCommand extends Command {
                                 .stream().map(String::toLowerCase)).toList(), args);
                 default -> List.of();
             };
+        }
+    }
+
+    private enum StatusLine {
+        PLUGIN_VERSION(plugin -> Component.text("v" + plugin.getPluginVersion().toStringWithoutMetadata())
+                .appendSpace().append(plugin.getPluginVersion().getMetadata().isBlank() ? Component.empty()
+                        : Component.text("(build " + plugin.getPluginVersion().getMetadata() + ")"))),
+        SERVER_VERSION(plugin -> Component.text(plugin.getServerType())),
+        LANGUAGE(plugin -> Component.text(plugin.getSettings().getLanguage())),
+        MINECRAFT_VERSION(plugin -> Component.text(plugin.getMinecraftVersion().toString())),
+        JAVA_VERSION(plugin -> Component.text(System.getProperty("java.version"))),
+        JAVA_VENDOR(plugin -> Component.text(System.getProperty("java.vendor"))),
+        SERVER_NAME(plugin -> Component.text(plugin.getServerName())),
+        DATABASE_TYPE(plugin -> Component.text(plugin.getSettings().getDatabase().getType().getDisplayName())),
+        IS_DATABASE_LOCAL(plugin -> getLocalhostBoolean(plugin.getSettings().getDatabase().getCredentials().getHost())),
+        USING_REDIS_SENTINEL(plugin -> getBoolean(!plugin.getSettings().getCrossServer().getRedis().getSentinel()
+                .getMasterName().isBlank())),
+        USING_REDIS_PASSWORD(plugin -> getBoolean(!plugin.getSettings().getCrossServer().getRedis().getPassword()
+                .isBlank())),
+        REDIS_USING_SSL(plugin -> getBoolean(!plugin.getSettings().getCrossServer().getRedis().isUseSsl())),
+        IS_REDIS_LOCAL(plugin -> getLocalhostBoolean(plugin.getSettings().getCrossServer().getRedis().getHost())),
+        REGISTERED_CUSTOM_OPERATION_TYPES(plugin -> Component.join(
+                JoinConfiguration.commas(true),
+                plugin.getOperationListener().getRegisteredOperationTypes().stream()
+                        .filter(t -> !t.getKey().namespace().equals("cloplib"))
+                        .map(tag -> Component.text(tag.getKey().asString())).toList()
+        )),
+        LOADED_HOOKS(plugin -> Component.join(
+                JoinConfiguration.commas(true),
+                plugin.getHookManager().getHooks().stream()
+                        .map(hook -> Component.text(hook.getHookInfo().id())).toList()
+        ));
+
+        private final Function<HuskTowns, Component> supplier;
+
+        StatusLine(@NotNull Function<HuskTowns, Component> supplier) {
+            this.supplier = supplier;
+        }
+
+        @NotNull
+        private Component get(@NotNull HuskTowns plugin) {
+            return Component
+                    .text("•").appendSpace()
+                    .append(Component.text(
+                            WordUtils.capitalizeFully(name().replaceAll("_", " ")),
+                            TextColor.color(0x848484)
+                    ))
+                    .append(Component.text(':')).append(Component.space().color(NamedTextColor.WHITE))
+                    .append(supplier.apply(plugin));
+        }
+
+        @NotNull
+        private static Component getBoolean(boolean value) {
+            return Component.text(value ? "Yes" : "No", value ? NamedTextColor.GREEN : NamedTextColor.RED);
+        }
+
+        @NotNull
+        private static Component getLocalhostBoolean(@NotNull String value) {
+            return getBoolean(value.equals("127.0.0.1") || value.equals("0.0.0.0")
+                    || value.equals("localhost") || value.equals("::1"));
         }
     }
 

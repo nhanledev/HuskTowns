@@ -19,14 +19,17 @@
 
 package net.william278.husktowns.database;
 
+import lombok.Getter;
 import net.william278.husktowns.HuskTowns;
 import net.william278.husktowns.claim.ClaimWorld;
 import net.william278.husktowns.claim.ServerWorld;
 import net.william278.husktowns.claim.World;
+import net.william278.husktowns.config.Settings;
 import net.william278.husktowns.town.Town;
 import net.william278.husktowns.user.Preferences;
 import net.william278.husktowns.user.SavedUser;
 import net.william278.husktowns.user.User;
+import org.intellij.lang.annotations.Language;
 import org.jetbrains.annotations.NotNull;
 
 import java.io.File;
@@ -61,7 +64,7 @@ public abstract class Database {
     protected final String[] getScript(@NotNull String name) {
         name = (name.startsWith("database/") ? "" : "database/") + name + (name.endsWith(".sql") ? "" : ".sql");
         try (InputStream schemaStream = Objects.requireNonNull(plugin.getResource(name))) {
-            final String schema = new String(schemaStream.readAllBytes(), StandardCharsets.UTF_8);
+            @Language("SQL") final String schema = new String(schemaStream.readAllBytes(), StandardCharsets.UTF_8);
             return format(schema).split(";");
         } catch (IOException e) {
             plugin.log(Level.SEVERE, "Failed to load database schema", e);
@@ -78,13 +81,13 @@ public abstract class Database {
      * @return The formatted SQL statement
      */
     @NotNull
-    protected final String format(@NotNull String statement) {
+    protected final String format(@NotNull @Language("SQL") String statement) {
         final Pattern pattern = Pattern.compile("%(\\w+)%");
         final Matcher matcher = pattern.matcher(statement);
         final StringBuilder sb = new StringBuilder();
         while (matcher.find()) {
-            final Table table = Table.match(matcher.group(1));
-            matcher.appendReplacement(sb, plugin.getSettings().getTableName(table));
+            final TableName tableName = TableName.match(matcher.group(1));
+            matcher.appendReplacement(sb, plugin.getSettings().getDatabase().getTableName(tableName));
         }
         matcher.appendTail(sb);
         return sb.toString();
@@ -137,13 +140,13 @@ public abstract class Database {
                 if (migration.getVersion() > currentVersion) {
                     try {
                         plugin.log(Level.INFO, "Performing database migration: " + migration.getMigrationName()
-                                + " (v" + migration.getVersion() + ")");
+                            + " (v" + migration.getVersion() + ")");
                         final String scriptName = "migrations/" + migration.getVersion() + "-" + type.name().toLowerCase() +
-                                "-" + migration.getMigrationName() + ".sql";
+                            "-" + migration.getMigrationName() + ".sql";
                         executeScript(connection, scriptName);
                     } catch (SQLException e) {
                         plugin.log(Level.WARNING, "Migration " + migration.getMigrationName()
-                                + " (v" + migration.getVersion() + ") failed; skipping", e);
+                            + " (v" + migration.getVersion() + ") failed; skipping", e);
                     }
                 }
             }
@@ -271,7 +274,7 @@ public abstract class Database {
      * Get a list of all claim worlds on a server
      *
      * @return A list of all claim worlds on a server.
-     * This will exclude {@link net.william278.husktowns.config.Settings#isUnclaimableWorld(World) unclaimable worlds}.
+     * This will exclude {@link Settings.GeneralSettings#isUnclaimableWorld(World) unclaimable worlds}.
      * @throws IllegalStateException if the plugin fails to fetch claim world data
      */
     public abstract Map<World, ClaimWorld> getClaimWorlds(@NotNull String server) throws IllegalStateException;
@@ -346,7 +349,8 @@ public abstract class Database {
     /**
      * Represents the names of tables in the database
      */
-    public enum Table {
+    @Getter
+    public enum TableName {
         META_DATA("husktowns_metadata"),
         USER_DATA("husktowns_users"),
         TOWN_DATA("husktowns_town_data"),
@@ -354,19 +358,28 @@ public abstract class Database {
         @NotNull
         private final String defaultName;
 
-        Table(@NotNull String defaultName) {
+        TableName(@NotNull String defaultName) {
             this.defaultName = defaultName;
         }
 
         @NotNull
-        public static Database.Table match(@NotNull String placeholder) throws IllegalArgumentException {
-            return Table.valueOf(placeholder.toUpperCase());
+        public static Database.TableName match(@NotNull String placeholder) throws IllegalArgumentException {
+            return TableName.valueOf(placeholder.toUpperCase());
         }
 
         @NotNull
-        public String getDefaultName() {
-            return defaultName;
+        private Map.Entry<String, String> toEntry() {
+            return Map.entry(name().toLowerCase(Locale.ENGLISH), defaultName);
         }
+
+        @NotNull
+        @SuppressWarnings("unchecked")
+        public static Map<String, String> getDefaults() {
+            return Map.ofEntries(Arrays.stream(values())
+                .map(TableName::toEntry)
+                .toArray(Map.Entry[]::new));
+        }
+
     }
 
     /**
@@ -374,12 +387,16 @@ public abstract class Database {
      */
     public enum Migration {
         ADD_METADATA_TABLE(
-                0, "add_metadata_table",
-                Type.MYSQL, Type.MARIADB, Type.SQLITE
+            0, "add_metadata_table",
+            Type.MYSQL, Type.MARIADB, Type.SQLITE
         ),
         ADD_USER_LAST_LOGIN(
-                1, "add_user_last_login",
-                Type.MYSQL, Type.MARIADB, Type.SQLITE
+            1, "add_user_last_login",
+            Type.MYSQL, Type.MARIADB, Type.SQLITE
+        ),
+        CONVERT_TO_JSONB(
+                2, "convert_to_jsonb",
+                Type.SQLITE
         );
 
         private final int version;
@@ -406,8 +423,8 @@ public abstract class Database {
 
         public static List<Migration> getOrderedMigrations() {
             return Arrays.stream(Migration.values())
-                    .sorted(Comparator.comparingInt(Migration::getVersion))
-                    .collect(Collectors.toList());
+                .sorted(Comparator.comparingInt(Migration::getVersion))
+                .collect(Collectors.toList());
         }
 
         public static int getLatestVersion() {

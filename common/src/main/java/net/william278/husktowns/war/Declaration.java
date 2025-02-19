@@ -42,26 +42,28 @@ import java.util.Optional;
  * @since 2.6
  */
 public record Declaration(
-        @Expose @SerializedName("attacking_town") int attackingTown,
-        @Expose @SerializedName("defending_town") int defendingTown,
-        @Expose BigDecimal wager,
-        @Expose User sender,
-        @Expose @SerializedName("expiry_time") OffsetDateTime expiryTime
+    @Expose @SerializedName("attacking_town") int attackingTown,
+    @Expose @SerializedName("defending_town") int defendingTown,
+    @Expose BigDecimal wager,
+    @Expose User sender,
+    @Expose @SerializedName("expiry_time") OffsetDateTime expiryTime
 ) {
     @NotNull
     public static Declaration create(@NotNull Member sender, @NotNull Town defendingTown, @NotNull BigDecimal wager,
                                      @NotNull HuskTowns plugin) {
         return new Declaration(
-                sender.town().getId(),
-                defendingTown.getId(),
-                wager,
-                sender.user(),
-                OffsetDateTime.now().plusMinutes(Math.max(0, plugin.getSettings().getWarDeclarationExpiry()))
+            sender.town().getId(),
+            defendingTown.getId(),
+            wager,
+            sender.user(),
+            OffsetDateTime.now().plusMinutes(Math.max(
+                0, plugin.getSettings().getTowns().getRelations().getWars().getDeclarationExpiry()
+            ))
         );
     }
 
     public boolean hasExpired() {
-        return OffsetDateTime.now().isAfter(expiryTime);
+        return expiryTime != null && OffsetDateTime.now().isAfter(expiryTime);
     }
 
     @NotNull

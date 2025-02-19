@@ -19,37 +19,41 @@
 
 package net.william278.husktowns.config;
 
-import net.william278.annotaml.YamlComment;
-import net.william278.annotaml.YamlFile;
-import net.william278.annotaml.YamlKey;
+import de.exlll.configlib.Comment;
+import de.exlll.configlib.Configuration;
+import lombok.AccessLevel;
+import lombok.NoArgsConstructor;
+import net.william278.cloplib.operation.OperationType;
 import net.william278.husktowns.claim.Flag;
-import net.william278.husktowns.listener.Operation;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
 import java.util.stream.Collectors;
 
-@YamlFile(header = """
-        ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-        ┃    HuskTowns Flags Config    ┃
-        ┃    Developed by William278   ┃
-        ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
-        ┣╸ This file is for configuring flags. Flag IDs map to a list of permitted operations.
-        ┗╸ Config Help: https://william278.net/docs/husktowns/config-files""")
+@Configuration
+@NoArgsConstructor(access = AccessLevel.PRIVATE)
 public class Flags {
 
-    @YamlComment("A map of flag IDs to operations that flag permits." +
-                 "Display names of flags correspond to a \"town_rule_name_\" locale in your messages file.")
-    @YamlKey("flags")
-    public Map<String, List<String>> flags = new LinkedHashMap<>(
-            Flag.getDefaults().stream().collect(Collectors.toMap(
-                    Flag::getName,
-                    flag -> flag.getAllowedOperations().stream().map(Enum::name).collect(Collectors.toList())
-            ))
-    );
+    protected static final String CONFIG_HEADER = """
+            ┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+            ┃    HuskTowns Flags Config    ┃
+            ┃    Developed by William278   ┃
+            ┣━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛
+            ┣╸ This file is for configuring flags. Flag IDs map to a list of permitted operations.
+            ┗╸ Config Help: https://william278.net/docs/husktowns/config-files""";
 
-    private Flags() {
-    }
+    @Comment("A map of flag IDs to operations that flag permits." +
+            "Display names of flags correspond to a \"town_rule_name_\" locale in your messages file.")
+    public Map<String, List<String>> flags = Flag.getDefaults().stream().collect(
+            Collectors.toMap(
+                    Flag::getName,
+                    flag -> flag.getAllowedOperations().stream()
+                            .map(OperationType::asMinimalString)
+                            .collect(Collectors.toList()),
+                    (a, b) -> a,
+                    LinkedHashMap::new
+            )
+    );
 
     /**
      * Get the set of {@link Flag flags} being used by the plugin
@@ -62,10 +66,7 @@ public class Flags {
         for (Map.Entry<String, List<String>> entry : flags.entrySet()) {
             flagSet.add(Flag.of(
                     entry.getKey(),
-                    entry.getValue().stream()
-                            .map(a -> Operation.Type.fromId(a).orElseThrow(
-                                    () -> new IllegalArgumentException("Invalid operation type in flags config: " + a)))
-                            .collect(Collectors.toUnmodifiableSet())
+                    entry.getValue().stream().map(OperationType::getOrCreate).collect(Collectors.toUnmodifiableSet())
             ));
         }
         return flagSet;
@@ -79,7 +80,7 @@ public class Flags {
     public void setFlags(@NotNull Set<Flag> flags) {
         this.flags = flags.stream().collect(Collectors.toMap(
                 Flag::getName,
-                flag -> flag.getAllowedOperations().stream().map(Enum::name).collect(Collectors.toList())
+                f -> f.getAllowedOperations().stream().map(OperationType::asMinimalString).toList()
         ));
     }
 

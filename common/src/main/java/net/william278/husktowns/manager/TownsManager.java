@@ -77,7 +77,7 @@ public class TownsManager {
         }
 
         // Check against town creation collateral requirements
-        final BigDecimal collateral = plugin.getSettings().doRequireFirstLevelCollateral()
+        final BigDecimal collateral = plugin.getSettings().getTowns().isRequireFirstLevelCollateral()
                 ? plugin.getLevels().getLevelUpCost(0) : BigDecimal.ZERO;
         final Optional<EconomyHook> hook = plugin.getEconomyHook();
         if (!collateral.equals(BigDecimal.ZERO) && hook.isPresent() && !hook.get().hasMoney(user, collateral)) {
@@ -181,11 +181,11 @@ public class TownsManager {
                 return;
             }
 
-            final Optional<? extends OnlineUser> localUser = plugin.findOnlineUser(target);
+            final Optional<OnlineUser> localUser = plugin.findOnlineUser(target);
             final Town town = member.town();
             final Invite invite = Invite.create(town.getId(), user);
             if (localUser.isEmpty()) {
-                if (!plugin.getSettings().doCrossServer()) {
+                if (!plugin.getSettings().getCrossServer().isEnabled()) {
                     plugin.getLocales().getLocale("error_user_not_found", target)
                             .ifPresent(user::sendMessage);
                     return;
@@ -210,15 +210,15 @@ public class TownsManager {
         final Optional<Town> town = plugin.findTown(invite.getTownId());
         if (plugin.getUserTown(user).isPresent() || town.isEmpty()) {
             plugin.log(Level.WARNING, "Received an invalid invite from "
-                    + invite.getSender().getUsername() + " to " + invite.getTownId());
+                                      + invite.getSender().getUsername() + " to " + invite.getTownId());
             return;
         }
 
         plugin.addInvite(user.getUuid(), invite);
         plugin.getLocales().getLocale("invite_received",
                 invite.getSender().getUsername(), town.get().getName()).ifPresent(user::sendMessage);
-        plugin.getLocales().getLocale("invite_buttons",
-                invite.getSender().getUsername()).ifPresent(user::sendMessage);
+        plugin.getLocales().getRawLocale("invite_buttons", invite.getSender().getUsername())
+                .map(plugin.getLocales()::format).ifPresent(user::sendMessage);
     }
 
     public void handleInviteReply(@NotNull OnlineUser user, boolean accepted, @Nullable String selectedInviter) {
@@ -904,11 +904,11 @@ public class TownsManager {
                                                     Locales.escapeText(entry.getValue().getType().name().toLowerCase()),
                                                     Locales.escapeText(locales.truncateText(entry.getValue().getDetails()
                                                             .orElse(NOT_APPLICABLE), 10)),
-                                                    Locales.escapeText(locales.wrapText(entry.getValue().getDetails()
-                                                            .orElse(NOT_APPLICABLE), 40)))
+                                                    Locales.escapeText(entry.getValue().getDetails()
+                                                            .orElse(NOT_APPLICABLE)))
                                             .orElse(entry.getValue().toString()))
                                     .toList(),
-                            locales.getBaseList(plugin.getSettings().getListItemsPerPage())
+                            locales.getBaseList(plugin.getSettings().getGeneral().getListItemsPerPage())
                                     .setHeaderFormat(locales.getRawLocale("town_audit_log_list_title",
                                             Locales.escapeText(member.town().getName())).orElse(""))
                                     .setItemSeparator("\n").setCommand("/husktowns:town log")
@@ -922,10 +922,11 @@ public class TownsManager {
             final Town town = member.town();
             town.getRules().get(type).setFlag(flag, value);
             town.getLog().log(Action.of(user, Action.Type.SET_FLAG_RULE, flag.getName().toLowerCase() + ": " + value));
+
             plugin.getLocales().getLocale("town_flag_set", flag.getName().toLowerCase(), Boolean.toString(value),
                     type.name().toLowerCase()).ifPresent(user::sendMessage);
             if (showMenu) {
-                showRulesConfig(user);
+                RulesConfig.of(plugin, town, user).show();
             }
             return true;
         }));
@@ -963,7 +964,6 @@ public class TownsManager {
                         Integer.toString(member.town().getMembers().size()),
                         Integer.toString(member.town().getMaxMembers(plugin)),
                         member.town().getBio()
-                                .map(bio -> plugin.getLocales().wrapText(bio, 40))
                                 .map(bio -> plugin.getLocales().truncateText(bio, 120))
                                 .orElse(plugin.getLocales().getNotApplicable())
                 )
